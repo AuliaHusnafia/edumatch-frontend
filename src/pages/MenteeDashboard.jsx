@@ -19,6 +19,14 @@ const IcSkill      = () => (<svg width="15" height="15" viewBox="0 0 24 24" fill
 const IcEdu        = () => (<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>);
 const IcPhone      = () => (<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12 19.79 19.79 0 0 1 1.65 3.18 2 2 0 0 1 3.64 1h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 8.59a16 16 0 0 0 6.29 6.29l.95-.95a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>);
 const IcNote       = () => (<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>);
+const IcStar = ({ filled }) => (
+  <svg width="20" height="20" viewBox="0 0 24 24"
+    fill={filled ? "#f59e0b" : "none"}
+    stroke="#f59e0b" strokeWidth="2"
+    strokeLinecap="round" strokeLinejoin="round">
+    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+  </svg>
+);
 const IcEmail      = () => (<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>);
 const IcBook       = () => (<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#2a6b9e" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>);
 
@@ -63,6 +71,11 @@ export default function MenteeDashboard() {
   const [bookingNotes, setBookingNotes]         = useState('');
   const [bookingMsg, setBookingMsg]             = useState('');
   const [payingId, setPayingId]                 = useState(null);
+  const [reviewModal, setReviewModal]   = useState({ open: false, bookingId: null, mentorName: '' });
+  const [reviewRating, setReviewRating] = useState(0);
+  const [reviewComment, setReviewComment] = useState('');
+  const [reviewStatus, setReviewStatus] = useState({});  // { [bookingId]: true/false }
+  const [submittingReview, setSubmittingReview] = useState(false);
   const [flash, setFlash]                       = useState({ type: '', msg: '' });
 
   const showFlash = (type, msg) => {
@@ -111,25 +124,24 @@ export default function MenteeDashboard() {
   };
 
   const fetchMySessions = async () => {
-    try {
-      const [a, b] = await Promise.all([
-        api.get('/mentee/ongoing-sessions/'),
-        api.get('/mentee/completed-sessions/')
-      ]);
-      setOngoingSessions(getList(a));
-      
-      // Tambahkan price ke completed sessions
-      const bData = getList(b);
-      const completedWithPrice = bData.map(session => ({
-        ...session,
-        price: session.price || 75000,
-        invoice_amount: session.invoice_amount || session.price || 75000
-      }));
-      setCompletedSessions(completedWithPrice);
-    } catch (e) { 
-      console.error(e); 
-    }
-  };
+  try {
+    const [a, b] = await Promise.all([
+      api.get('/mentee/ongoing-sessions/'),
+      api.get('/mentee/completed-sessions/')
+    ]);
+    setOngoingSessions(getList(a));
+    const bData = getList(b);
+    const completedWithPrice = bData.map(session => ({
+      ...session,
+      price: session.price || 75000,
+      invoice_amount: session.invoice_amount || session.price || 75000
+    }));
+    setCompletedSessions(completedWithPrice);
+    // Cek status review untuk semua completed session
+    const paidIds = completedWithPrice.filter(s => s.status === 'paid').map(s => s.id);
+    if (paidIds.length > 0) fetchReviewStatus(paidIds);
+  } catch (e) { console.error(e); }
+};
 
   const refreshAll = async () => {
   await Promise.all([
@@ -213,6 +225,38 @@ const handlePayInvoice = async (bookingId) => {
       setPayingId(null);
     }
   };
+
+  const fetchReviewStatus = async (bookingIds) => {
+  const results = {};
+  await Promise.all(bookingIds.map(async (id) => {
+    try {
+      const res = await api.get(`/reviews/check/${id}/`);
+      results[id] = res.data.has_review;
+    } catch { results[id] = false; }
+  }));
+  setReviewStatus(results);
+};
+
+const handleSubmitReview = async () => {
+  if (reviewRating === 0) { showFlash('error', 'Pilih rating bintang dulu'); return; }
+  setSubmittingReview(true);
+  try {
+    await api.post('/reviews/create/', {
+      booking_id: reviewModal.bookingId,
+      rating: reviewRating,
+      comment: reviewComment,
+    });
+    showFlash('success', '⭐ Review berhasil dikirim! Terima kasih.');
+    setReviewModal({ open: false, bookingId: null, mentorName: '' });
+    setReviewRating(0);
+    setReviewComment('');
+    // Update status review langsung
+    setReviewStatus(prev => ({ ...prev, [reviewModal.bookingId]: true }));
+  } catch (e) {
+    showFlash('error', e.response?.data?.error || 'Gagal mengirim review');
+  }
+  setSubmittingReview(false);
+};
 
   const handleLogout = () => { localStorage.clear(); navigate('/login'); };
 
@@ -484,7 +528,39 @@ const handlePayInvoice = async (bookingId) => {
           ) : (
             completedSessions.map(s => {
               // Tentukan status pembayaran
-              const isPaid = s.status === 'paid';
+              {/* Tombol Review — hanya muncul kalau sudah paid */}
+{isPaid && (
+  reviewStatus[s.id]
+    ? (
+      <div style={{ marginTop: '10px', fontSize: '13px', color: '#2a6b9e', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '6px' }}>
+        <IcStar filled={true} /> Sudah direview
+      </div>
+    ) : (
+      <button
+        onClick={() => {
+          setReviewModal({ open: true, bookingId: s.id, mentorName: s.mentor_name });
+          setReviewRating(0);
+          setReviewComment('');
+        }}
+        style={{
+          marginTop: '10px',
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: '8px',
+          border: 'none',
+          padding: '9px 18px',
+          borderRadius: '10px',
+          fontSize: '13px',
+          fontWeight: '700',
+          cursor: 'pointer',
+          color: '#fff',
+          background: 'linear-gradient(135deg, #f59e0b, #d97706)',
+        }}
+      >
+        <IcStar filled={false} /> Beri Rating & Review
+      </button>
+    )
+)}
               const isPending = s.status === 'completed' || s.status === 'pending_payment';
               
               return (
@@ -639,6 +715,71 @@ const handlePayInvoice = async (bookingId) => {
           </div>
         </div>
       )}
+
+      {/* ── Modal Review ─────────────────────────────────────────── */}
+{reviewModal.open && (
+  <div style={S.overlay} onClick={() => setReviewModal({ open: false, bookingId: null, mentorName: '' })}>
+    <div style={{ ...S.modal, maxWidth: '440px' }} onClick={e => e.stopPropagation()}>
+      <div style={S.mHead}>
+        <h2 style={S.mTitle}><IcStar filled={true} /> Beri Review</h2>
+        <button style={S.closeBtn} onClick={() => setReviewModal({ open: false, bookingId: null, mentorName: '' })}>
+          <IcClose />
+        </button>
+      </div>
+
+      <p style={{ fontSize: '14px', color: '#2c5a7a', marginBottom: '20px' }}>
+        Bagaimana sesi mentoringmu bersama <strong>{reviewModal.mentorName}</strong>?
+      </p>
+
+      {/* Bintang Rating */}
+      <div style={{ marginBottom: '20px' }}>
+        <p style={{ fontWeight: '700', color: '#1e4a76', marginBottom: '10px', fontSize: '14px' }}>
+          Rating <span style={{ color: '#e53e3e' }}>*</span>
+        </p>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          {[1, 2, 3, 4, 5].map(star => (
+            <button
+              key={star}
+              onClick={() => setReviewRating(star)}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', transition: 'transform .1s' }}
+              onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.2)'}
+              onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
+            >
+              <IcStar filled={star <= reviewRating} />
+            </button>
+          ))}
+        </div>
+        {reviewRating > 0 && (
+          <p style={{ fontSize: '13px', color: '#f59e0b', fontWeight: '600', marginTop: '6px' }}>
+            {['', 'Sangat Buruk', 'Buruk', 'Cukup', 'Bagus', 'Sangat Bagus!'][reviewRating]}
+          </p>
+        )}
+      </div>
+
+      {/* Komentar */}
+      <div style={{ marginBottom: '20px' }}>
+        <label style={{ fontWeight: '700', color: '#1e4a76', fontSize: '14px', display: 'block', marginBottom: '8px' }}>
+          Komentar <span style={{ fontWeight: '400', color: '#aaa' }}>(opsional)</span>
+        </label>
+        <textarea
+          placeholder="Ceritakan pengalamanmu bersama mentor ini..."
+          value={reviewComment}
+          onChange={e => setReviewComment(e.target.value)}
+          rows="4"
+          style={S.textarea}
+        />
+      </div>
+
+      <button
+        onClick={handleSubmitReview}
+        disabled={submittingReview || reviewRating === 0}
+        style={reviewRating > 0 && !submittingReview ? S.subBtn : S.subBtnDis}
+      >
+        {submittingReview ? 'Mengirim...' : '⭐ Kirim Review'}
+      </button>
+    </div>
+  </div>
+)}
     </div>
   );
 }
