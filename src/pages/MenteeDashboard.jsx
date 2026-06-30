@@ -181,8 +181,13 @@ export default function MenteeDashboard() {
       if (!token) throw new Error('Gagal mendapatkan token pembayaran');
       window.snap.pay(token, {
         onSuccess: async () => {
-          try { await api.post('/payments/simulate-success/', { booking_id: bookingId }); } catch {}
-          showFlash('success', '✅ Pembayaran berhasil!');
+          try { 
+            await api.post('/payments/simulate-success/', { booking_id: bookingId }); 
+            showFlash('success', '✅ Pembayaran berhasil!');
+          } catch (e) {
+            console.error("Simulation failed:", e);
+            showFlash('error', '⚠️ Pembayaran berhasil di Midtrans, tetapi gagal disinkronkan ke sistem.');
+          }
           await refreshAll();
           setPayingId(null);
         },
