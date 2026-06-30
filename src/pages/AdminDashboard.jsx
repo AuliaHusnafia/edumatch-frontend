@@ -567,7 +567,7 @@ export default function AdminDashboard() {
                     ['Total Transaksi Sukses', allPayments.filter(p=>p.status==='success').length],
                     ['Total Transaksi Gagal', allPayments.filter(p=>p.status==='failed').length],
                     ['Transaksi Pending', allPayments.filter(p=>p.status==='pending').length],
-                    ['Sesi Menunggu Pembayaran', (stats.completed_sessions||0) - (stats.paid_sessions||0) || 0],
+                    ['Sesi Menunggu Pembayaran', (stats.completed_sessions||0)],
                   ].map(([label, val]) => (
                     <tr key={label}>
                       <td style={S.td}>{label}</td>
